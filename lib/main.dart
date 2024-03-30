@@ -1,87 +1,114 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uni_links/uni_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 void main() => runApp(MyApp());
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   @override
-  _MyAppState createState() => _MyAppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Deep Link Handler',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: MyHomePage(),
+    );
+  }
 }
 
-class _MyAppState extends State<MyApp> {
-  String _latestLink = 'Unknown';
+class MyHomePage extends StatefulWidget {
+  @override
+  _MyHomePageState createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  List<Uri> _deepLinks = [];
 
   @override
   void initState() {
     super.initState();
-    initUniLinks();
+    initPlatformState();
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-  Future<void> initUniLinks() async {
-    try {
-      // Listen for deep links
-      getLinksStream().listen((String? link) {
-        if (!mounted) return;
-        setState(() {
-          _latestLink = link ?? 'Unknown';
-          // Handle the deep link here
-          handleDeepLink(link);
-        });
-      }, onError: (err) {
-        setState(() {
-          _latestLink = 'Failed to get latest link: $err.';
-        });
-      });
-
-      // Get initial deep link when the app is launched
-      final initialLink = await getInitialLink();
-      setState(() {
-        _latestLink = initialLink ?? 'Unknown';
-        // Handle the initial deep link here
-        handleDeepLink(initialLink);
-      });
-    } catch (err) {
-      setState(() {
-        _latestLink = 'Failed to get latest link: $err.';
-      });
+  Future<void> initPlatformState() async {
+    // First, check if the app was started via a deep link
+    final initialLink = await getInitialLink();
+    if (initialLink != null) {
+      handleDeepLink(Uri.parse(initialLink));
     }
+
+    // Listen for deep links while the app is running
+    uriLinkStream.listen((Uri? uri) {
+      if (uri != null) {
+        handleDeepLink(uri);
+      }
+    }, onError: (err) {
+      // Handle errors
+    });
   }
 
-  void handleDeepLink(String? link) {
-    // Handle the received deep link
-    if (link != null) {
-      // For example, you can parse the deep link and perform actions based on it
-      print('Received deep link: $link');
-      // You can also launch other apps using the url_launcher package if needed
+  void handleDeepLink(Uri uri) {
+    setState(() {
+      _deepLinks.add(uri);
+    });
+  }
+
+  Future<void> launchUrl(Uri uri) async {
+    final url = uri.toString();
+    if (await canLaunch(url)) {
+      await launch(url);
+    } else {
+      throw 'Could not launch $url';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          title: Text('Deep Link Handler'),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Deep Link Handler'),
+      ),
+      body: Container(
+        color: Colors.white,
+        child: Center(
+          child: _deepLinks.isEmpty
+              ? Text(
+                  'No deep links received',
+                  style: TextStyle(color: Colors.black),
+                )
+              : ListView.builder(
+                  itemCount: _deepLinks.length,
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Card(
+                        child: ListTile(
+                          title: Center(
+                            child: Text(
+                              _deepLinks[index].toString(),
+                              style: TextStyle(color: Colors.black),
+                            ),
+                          ),
+                          onTap: () {
+                            launchUrl(_deepLinks[index]);
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
         ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Text('Latest deep link:'),
-              Text(
-                _latestLink,
-                style: TextStyle(fontSize: 20),
-              ),
-            ],
-          ),
-        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          // Example deep link to launch
+          String exampleDeepLink = 'example://open?param=value';
+          await launchUrl(Uri.parse(exampleDeepLink));
+        },
+        tooltip: 'Launch Example Deep Link',
+        child: Icon(Icons.open_in_browser),
       ),
     );
   }
